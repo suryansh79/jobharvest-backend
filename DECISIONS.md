@@ -1,28 +1,22 @@
 # DECISIONS
 
 ## 1. Ingestion Strategy
-I deliberately selected Jobicy’s public, auth-free Remote Jobs API over direct browser/HTML scraping of protected portals like LinkedIn, Indeed, Naukri, or Wellfound. Direct scraping introduces operational and compliance risks: anti-bot detection, browser fingerprints, behavioral tracking, CAPTCHAs, auth barriers, and ToS violations.
+I deliberately selected Jobicy’s public, auth-free Remote Jobs API rather than direct browser/HTML scraping of protected job portals such as LinkedIn, Indeed, Naukri, or Wellfound.
 
-Consuming a structured public API provided a stable data contract, allowing me to focus on core data engineering—resilient fetching, normalization, validation, deduplication, rate control, and PostgreSQL persistence—without attempting to bypass anti-bot or access controls.
+Direct scraping of protected job boards introduces significant operational and compliance risks: anti-bot detection surfaces, browser fingerprinting, behavioral tracking, CAPTCHA barriers, authentication requirements, and Terms of Service (ToS) violations. The assessment explicitly permits a low-risk public job-board API or RSS source.
 
-## 2. Detection Surface & Hypothetical Strategy
-Automated scrapers are detected via browser fingerprints, rigid request timing, header anomalies, session patterns, and IP-level rate limits. In a hypothetical system targeting a protected platform, my strategy would use conservative pacing with randomized jitter, consistent session management, and source isolation to pause queries immediately upon rate-limit signals.
+Consuming a structured public API provided a stable data contract, allowing me to focus engineering effort on core data pipeline reliability—resilient HTTP fetching with bounded retries, payload normalization, field validation, database deduplication, database-backed cooldown tracking, and transactional PostgreSQL persistence—without attempting to bypass anti-bot controls.
 
-**Submitted Scope**: The submitted implementation consumes Jobicy's public API and does not use browser stealth, IP/proxy rotation, fingerprint spoofing, or CAPTCHA bypass.
+## 2. Time-Box Trade-Off
+Under the time limit, I chose to make one source pipeline deeply reliable rather than implementing multiple shallow source integrations.
 
-## 3. Resilience, Fallback & Boundary
-- **Database Cooldown**: Enforces a 60-minute rate limit in PostgreSQL (`ingestion_logs`), surviving restarts and Render sleep cycles.
-- **Single-Flight Lock**: Uses an `AtomicBoolean` lock preventing duplicate parallel executions on single-instance runtimes.
-- **Bounded Backoff**: Retries 5xx errors/timeouts up to 3 times (2s/4s/8s delays); fails fast on 429/4xx client errors.
-- **Validation & Deduplication**: Rejects malformed records; enforces database uniqueness via `CONSTRAINT uq_source_external_id UNIQUE (source, external_id)`.
-- **Audit Logging**: Tracks explicit run outcomes (`SUCCESS`, `PARTIAL`, `EMPTY`, `FAILED`, `RATE_LIMITED`).
+This trade-off enabled me to deliver a complete, production-ready ingestion pipeline with 21 passing automated unit tests, Flyway database migrations, rate-limit cooldown persistence, and a verified live deployment on Render and Neon PostgreSQL. With a full week of development time, I would implement a second authorized public API adapter (such as Arbeitnow) behind the existing `JobSource` abstraction, add dynamic health-based fallback routing, and expand integration monitoring and alerts.
 
-If blocked, the system backs off and logs an explicit `FAILED` status. Future work includes adding a second authorized public API adapter for fallback.
+## 3. AI Usage & Personal Verification
+AI tools were used throughout development for code scaffolding assistance, debugging, edge-case review, and documentation refinement.
 
-**Boundary**: I will not bypass authentication, solve CAPTCHAs, spoof fingerprints, or aggressively query a blocking source.
-
-## 4. Time-Box Trade-Off
-Under the time limit, I made one source pipeline deeply reliable rather than implementing several shallow integrations. This delivered a complete pipeline with 21 passing tests, Flyway migrations, and a live deployment on Render and Neon PostgreSQL. With more time, I would add a second public API adapter (Arbeitnow), dynamic source health evaluation, and telemetry alerts.
-
-## 5. AI & Ownership
-AI tools assisted development, debugging, and documentation. I took personal ownership of the system: I validated the test suite locally (21 passing tests), inspected Render production logs, diagnosed a PostgreSQL parameter type inference bug (`ERROR: function lower(bytea) does not exist`), and fixed it using explicit JPQL string casting (`CAST(:keyword AS string)`). I verified all deployed REST endpoints and confirmed the live ingestion result (50 fetched, 50 new, 0 duplicates, 0 failed).
+I took full personal ownership of the system and verified every technical component:
+- I executed and validated the test suite locally (`./mvnw test` -> 21 passing tests).
+- I inspected Render production logs, diagnosed a PostgreSQL parameter type inference bug (`ERROR: function lower(bytea) does not exist`), and resolved it by applying explicit string parameter casting in JPQL (`CAST(:keyword AS string)`).
+- I verified all deployed REST endpoints (`GET /`, `GET /health`, `GET /api/jobs`, `GET /api/ingestion/status`).
+- I verified the successful production ingestion run (50 fetched, 50 new, 0 duplicates, 0 failed).
