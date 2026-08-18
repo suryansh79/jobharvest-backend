@@ -14,8 +14,8 @@ public class RootController {
     public Map<String, Object> root() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("service", "JobHarvest");
-        info.put("description", "Job listing ingestion system — Acdyon Technologies Assignment, Part 1");
-        info.put("purpose", "Fetches, normalizes, validates, deduplicates, and persists job listings from public APIs");
+        info.put("description", "Production-ready job listing ingestion and search API with validation, deduplication, resilient ingestion, PostgreSQL persistence, filtering, and pagination.");
+        info.put("purpose", "Fetches job listings from the Jobicy public API, normalizes and validates the data, prevents duplicates, persists jobs in PostgreSQL, and exposes searchable paginated REST APIs.");
         info.put("source", "Jobicy Remote Jobs API (public, no auth)");
         info.put("timestamp", Instant.now().toString());
         info.put("endpoints", Map.of(
