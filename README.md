@@ -1,7 +1,5 @@
 # JobHarvest
 
-> **Acdyon Technologies — Frontend Challenge, Part 1: Getting Data Out of a Platform That Doesn't Want You To**
-
 JobHarvest is a production-minded Spring Boot backend service that automatically ingests, normalizes, validates, deduplicates, and persists remote job listings from public APIs into a PostgreSQL database, exposing them via a clean REST API surface.
 
 ---
