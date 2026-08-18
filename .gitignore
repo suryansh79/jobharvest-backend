@@ -9,6 +9,8 @@ target/
 .project
 .classpath
 .env
+.env.*
+!.env.example
 *.swp
 *.swo
 *~
