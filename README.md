@@ -46,7 +46,7 @@ JobHarvest solves this by providing:
 
 - **Java**: Java 21 LTS baseline.
 - **Framework**: Spring Boot `3.4.3` (`spring-boot-starter-web`, `spring-boot-starter-data-jpa`, `spring-boot-starter-actuator`).
-- **Database**: PostgreSQL (Neon Free PostgreSQL in production, H2 in-memory for unit tests).
+- **Database**: PostgreSQL (Neon Free PostgreSQL in production; isolated H2 in-memory database for automated unit tests).
 - **Schema Management**: Flyway (`flyway-core`, `flyway-database-postgresql`).
 - **Build Tool**: Apache Maven Wrapper (`./mvnw`).
 - **Containerization**: Multi-stage Dockerfile (`eclipse-temurin:21-jdk` & `eclipse-temurin:21-jre`).
@@ -318,7 +318,7 @@ Audit trail of every ingestion execution.
 ## 8. Local Setup Instructions
 
 ### Prerequisites
-- Java 21 JDK (or JDK 25)
+- Java 21 JDK
 - Git
 
 ### 1. Clone Repository
@@ -327,20 +327,20 @@ git clone https://github.com/suryansh79/jobharvest-backend.git
 cd jobharvest-backend
 ```
 
-### 2. Configure Environment Variables (Optional for Local)
-Copy `.env.example` to set local database overrides, or run with defaults (uses H2 in-memory database for local testing).
+### 2. Configure Environment Variables
+Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` to connect to a local PostgreSQL instance (default: `jdbc:postgresql://localhost:5432/jobharvest`) or a Neon PostgreSQL instance (refer to `.env.example`).
 
 ### 3. Run Automated Unit & Integration Tests
 ```bash
 ./mvnw test
 ```
-*Executes all 21 automated unit tests using H2 database and mocked HTTP servers.*
+*Executes all 21 automated unit tests using an isolated in-memory H2 database (`src/test/resources/application.yml`) and mocked HTTP servers.*
 
 ### 4. Run Application Locally
 ```bash
 ./mvnw spring-boot:run
 ```
-Application will start on `http://localhost:8080`.
+Application will start on `http://localhost:8080` and connect to the configured PostgreSQL database.
 
 ---
 
