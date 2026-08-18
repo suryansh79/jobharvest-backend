@@ -1,0 +1,22 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false
+
+app:
+  ingestion:
+    source-url: https://jobicy.com/api/v2/remote-jobs?count=50
+    cooldown-minutes: 60
+    max-retries: 3
+    backoff-base-ms: 100
+    timeout-seconds: 5

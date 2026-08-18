@@ -1,0 +1,31 @@
+name: Scheduled Ingestion Trigger
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  trigger-ingestion:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ingestion endpoint
+        run: |
+          RESPONSE=$(curl -s -o /tmp/response.txt -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_URL }}/api/ingestion/run" \
+            -H "Content-Type: application/json" \
+            --max-time 120)
+          echo "HTTP Status: $RESPONSE"
+          cat /tmp/response.txt
+          echo ""
+
+          # Accept expected statuses
+          case $RESPONSE in
+            200|202|429|409)
+              echo "Accepted status: $RESPONSE"
+              ;;
+            *)
+              echo "Unexpected status: $RESPONSE — failing workflow"
+              exit 1
+              ;;
+          esac
