@@ -369,3 +369,19 @@ Application will start on `http://localhost:8080` and connect to the configured 
    - `SPRING_DATASOURCE_USERNAME` = `<username>`
    - `SPRING_DATASOURCE_PASSWORD` = `<password>`
 4. **GitHub Actions Scheduler**: `.github/workflows/ingestion.yml` runs hourly, making an HTTP `POST` request to `${{ secrets.RENDER_URL }}/api/ingestion/run`. Wakes Render instance from sleep and triggers ingestion cleanly.
+
+---
+
+## 11. Adversarial Ingestion Design
+
+### 1. Detection Surface
+Hostile job portals detect automated scrapers through browser automation fingerprints (TLS/WebGL), rigid request intervals, header anomalies, session pattern mismatches, and IP-level rate limits. In our submitted implementation, browser-level detection signals are outside our attack surface because we consume Jobicy's structured, public, auth-free API endpoint rather than executing headless browser automation.
+
+### 2. Ingestion Strategy & Blocking Response
+When interfacing with protected targets, a production ingestion strategy requires conservative request pacing with randomized jitter, consistent session header management, and modular adapter isolation (`JobSource`). If a source returns rate-limit (429) or blocking signals, the pipeline immediately backs off and records an explicit `FAILED` audit status rather than attempting aggressive evasion. In a multi-source production environment, a second authorized public API or RSS source adapter would serve as a fallback. *(Note: Proxy rotation, stealth browsers, CAPTCHA bypass, and automatic failover are non-goals and not implemented in this submitted demo).*
+
+### 3. Resilience & Schema Drift
+Resilience against operational failures is implemented via a 60-minute database-backed cooldown (`ingestion_logs`), an `AtomicBoolean` single-flight lock, 3-attempt exponential backoff retries, validation, and database deduplication (`UNIQUE(source, external_id)`). Upstream API contract drift or empty responses are caught during DTO parsing and recorded as `FAILED` or `EMPTY` audit states without corrupting persisted database data.
+
+### 4. Technical & Ethical Boundary
+System design strictly respects technical and legal access controls: we do not bypass authentication barriers, solve CAPTCHAs, spoof browser fingerprints to defeat explicit controls, or aggressively query a blocking target. Ingestion is restricted to authorized public data sources.
