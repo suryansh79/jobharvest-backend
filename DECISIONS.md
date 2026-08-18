@@ -1,39 +1,40 @@
-# Architectural Decisions & Trade-Offs (DECISIONS.md)
+# DECISIONS
 
-### 1. Source Selection: Jobicy Public API vs. Hostile Direct Scraping
-- **Decision**: Ingest from Jobicy’s public, auth-free Remote Jobs API (`GET /api/v2/remote-jobs`) rather than direct scraping of protected platforms (e.g. LinkedIn or Indeed).
-- **Rationale**: Demonstrates complete ingestion engineering (parsing, normalization, validation, deduplication, resilience) without violating terms of service, attempting illegal CAPTCHA bypasses, or incurring IP ban risks.
-- **Trade-off**: Data volume is limited to remote job listings provided by public feeds rather than arbitrary scraped sites.
+## 1. Ingestion Strategy
+I chose to ingest job listings from Jobicy's public, auth-free Remote Jobs API rather than performing direct browser/HTML scraping on protected platforms like LinkedIn, Indeed, Naukri, or Wellfound.
 
-### 2. Stack: Java 21 & Spring Boot 3.4
-- **Decision**: Spring Boot monolith using Java 21 LTS baseline and standard Spring Data JPA + Web starter components.
-- **Rationale**: Java/Spring Boot provides robust type safety, mature HTTP client capabilities, and standard transactional database access. Java 21 allows clean compilation across local and containerized runtimes.
-- **Trade-off**: Higher JVM memory footprint (~250-350 MB RAM) compared to lightweight runtimes (e.g. Go), requiring careful tuning for 512 MB free container tiers.
+Direct scraping of protected job portals introduces browser fingerprint detection, behavioral analysis, CAPTCHA challenges, authentication requirements, and high Terms of Service (ToS) compliance risks. For this assignment, browser-level anti-bot detection is largely outside our attack surface because we consume a structured public API endpoint.
 
-### 3. Infrastructure: Render Free Web Service + Neon Free PostgreSQL
-- **Decision**: Host web application on Render Free Web Service (Docker) and database on Neon Free PostgreSQL.
-- **Rationale**: Render's PostgreSQL free tier auto-deletes databases after 30 days. Neon provides a non-expiring PostgreSQL instance (0.5 GB storage, 100 CU-hours/month compute). Combined, they achieve a verified ₹0/$0 deployment without billing risk.
-- **Trade-off**: Both platforms scale to zero when idle, introducing a 60–90 second cold-start delay on initial access.
+Consuming an authorized public API allowed me to focus the implementation on core data engineering concerns—building a resilient HTTP fetching pipeline, payload normalization, strict field validation, database deduplication, rate control, and transactional PostgreSQL persistence—without attempting to bypass security mechanisms or risk IP bans.
 
-### 4. Production Scheduling: GitHub Actions vs. Spring `@Scheduled`
-- **Decision**: External hourly trigger via GitHub Actions (`.github/workflows/ingestion.yml`) calling `POST /api/ingestion/run`.
-- **Rationale**: Render Free Web Service sleeps after 15 minutes of inactivity. An internal Spring `@Scheduled` runner cannot execute while the JVM container is down. GitHub Actions wakes the web service and triggers ingestion reliably.
-- **Trade-off**: External dependency on GitHub Actions runner execution timing.
+## 2. Resilience, Fallback & Boundary
+The ingestion pipeline builds resilience across multiple layers:
+- **Database-Backed Cooldown**: Enforces a 60-minute rate limit stored in PostgreSQL (`ingestion_logs`), surviving application restarts, container redeployments, and Render free-tier sleep cycles.
+- **Single-Flight Concurrency Lock**: Uses an `AtomicBoolean` lock to prevent duplicate parallel executions on single-instance runtimes.
+- **Bounded Exponential Backoff**: Retries transient 5xx server errors and connection timeouts up to 3 times (with 2s, 4s, 8s delays), while failing fast on 429 and 4xx client errors.
+- **Validation & Deduplication**: Rejects malformed records and enforces database-level uniqueness via `CONSTRAINT uq_source_external_id UNIQUE (source, external_id)`.
+- **Ingestion Audit Trail**: Records explicit run outcomes (`SUCCESS`, `PARTIAL`, `EMPTY`, `FAILED`, `RATE_LIMITED`) with full duration and count metrics.
 
-### 5. Single Source vs. Multi-Source Complexity
-- **Decision**: Implement one robust source adapter (`JobicySource`) behind a clean `JobSource` interface.
-- **Rationale**: One fully verified source with comprehensive test coverage demonstrates source abstraction and engineering rigor without bloat.
-- **Trade-off**: Additional source adapters (e.g. Arbeitnow) exist as documented patterns rather than active production code.
+**Fallback & Boundary**: If the primary source becomes unavailable or returns persistent error responses, the system backs off and records an explicit `FAILED` audit status rather than attempting aggressive evasion or stealth automation. In a production environment with more development time, I would place additional permitted public API or RSS adapters behind the `JobSource` interface to enable authorized multi-source fallback.
 
-### 6. Fallback Strategy: Operator-Driven vs. Automatic Failover
-- **Decision**: Operator-driven fallback (implementing a new `JobSource` adapter and redeploying via configuration).
-- **Rationale**: Claiming "automatic failover" without multi-active source polling is misleading. Serving previously persisted PostgreSQL data during upstream outages provides immediate resilience; source replacement is handled via deliberate operator action.
-- **Trade-off**: Source migration requires an operator code/config push rather than automated runtime switching.
+**Technical & ToS Boundary**: I would not bypass authentication, solve CAPTCHAs, spoof browser fingerprints, or aggressively query an endpoint that is actively blocking requests.
 
-### 7. Explicit Non-Goals & Omitted Technologies
-- **Intentionally Omitted**: Kafka, Redis, RabbitMQ, Elasticsearch, Kubernetes, React Frontend.
-- **Rationale**: Adding distributed message queues, in-memory caches, or single-page applications to a low-volume hourly ingestion service represents unnecessary complexity ("resume-driven development") that cannot be justified in a technical interview.
+## 3. Time-Box Trade-Off
+Under the time limit, I chose to make one source pipeline deeply reliable rather than building multiple partially complete source adapters.
 
-### 8. AI Usage & Verification Disclosure
-- **AI Assistance**: AI tools were utilized for architectural analysis, boilerplate scaffolding, and test suite generation.
-- **Manual Verification**: All source code, schema migrations (`V1__create_schema.sql`), rate-limiting algorithms, and unit test suites were compiled and executed locally (`./mvnw test` -> 21 passing tests) and verified against live API responses.
+This approach allowed me to build and verify a complete end-to-end ingestion lifecycle with 21 automated unit and integration tests, database-backed cooldown persistence, single-flight locking, Flyway migrations, and a verified live production deployment on Render and Neon PostgreSQL.
+
+With a full week of development time, I would implement:
+1. A second authorized public API or RSS source adapter (e.g., Arbeitnow) behind the existing `JobSource` interface.
+2. Dynamic source health evaluation and automated fallback selection.
+3. Expanded integration testing and end-to-end telemetry monitoring.
+
+## 4. AI & Ownership
+AI tools were used throughout development for architectural brainstorming, boilerplate scaffolding, unit test generation, and documentation formatting.
+
+I took personal ownership of the implementation and verified every component:
+- I executed and validated the application and automated test suite locally (`./mvnw test` -> 21 passing tests).
+- I analyzed production error logs and diagnosed the PostgreSQL parameter type inference bug (`ERROR: function lower(bytea) does not exist`), resolving it by applying explicit String parameter casting in JPQL (`CAST(:keyword AS string)`).
+- I verified the live production deployment on Render and Neon PostgreSQL, testing all REST endpoints (`GET /`, `GET /health`, `GET /api/jobs`, `GET /api/ingestion/status`).
+- I confirmed the initial production ingestion run succeeded (50 fetched, 50 new, 0 duplicates, 0 failed).
+- I reviewed, tested, and approved all code submitted in this repository.
